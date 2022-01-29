@@ -98,23 +98,20 @@ impl Entry {
 
 #[derive(Debug)]
 pub struct TranspositionTable {
-    table: Box<[Entry]>,
-    mask: usize,
+    table: Box<[Entry]>
 }
 
 impl TranspositionTable {
     pub fn new(size: usize) -> Self {
-        let size = size.next_power_of_two();
         let table = (0..size).map(|_| Entry::zeroed()).collect::<Box<_>>();
         Self {
-            table,
-            mask: size - 1,
+            table
         }
     }
 
     #[inline]
     fn index(&self, hash: u64) -> usize {
-        (hash as usize) & self.mask
+        ((hash as u32 as u64 * self.table.len() as u64) >> u32::BITS) as usize
     }
 
     pub fn get(&self, board: &Board) -> Option<Analysis> {
