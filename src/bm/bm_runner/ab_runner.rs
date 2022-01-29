@@ -15,7 +15,7 @@ use crate::bm::bm_search::threshold::Threshold;
 use crate::bm::bm_util::h_table::{CounterMoveTable, DoubleMoveHistory, HistoryTable};
 use crate::bm::bm_util::lookup::LookUp2d;
 use crate::bm::bm_util::position::Position;
-use crate::bm::bm_util::t_table::TranspositionTable;
+use crate::bm::bm_util::t_table::{TranspositionTable, Entry};
 use crate::bm::bm_util::window::Window;
 use crate::bm::uci;
 
@@ -586,7 +586,7 @@ impl AbRunner {
     }
 
     pub fn hash(&mut self, hash_mb: usize) {
-        let entry_count = hash_mb * 65536;
+        let entry_count = hash_mb * 1_000_000 / std::mem::size_of::<Entry>();
         self.shared_context.t_table = Arc::new(TranspositionTable::new(entry_count));
     }
 
