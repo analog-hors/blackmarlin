@@ -40,13 +40,13 @@ impl Position {
             .rev()
             .skip(1)
             .take(ply as usize)
-            .any(|board| board.hash() == hash)
+            .any(|board| board.hash(true) == hash)
             || self
                 .boards
                 .iter()
                 .rev()
                 .skip(ply as usize + 1)
-                .filter(|board| board.hash() == hash)
+                .filter(|board| board.hash(true) == hash)
                 .count()
                 >= 2
     }
@@ -89,7 +89,7 @@ impl Position {
 
     #[inline]
     pub fn hash(&self) -> u64 {
-        self.board().hash()
+        self.board().hash(true)
     }
 
     pub fn get_eval(&mut self, stm: Color, root_eval: Evaluation) -> Evaluation {

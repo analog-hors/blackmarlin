@@ -10,7 +10,7 @@ lto = "fat"
 codegen-units = 1
 
 [dependencies]
-cozy-chess = "0.2.1"
+cozy-chess = { git = "https://github.com/analog-hors/cozy-chess", branch = "ep-hash" }
 text_io = "0.1.8"
 arrayvec = "0.7.1"
 regex = { version = "1.5.4", optional = true }

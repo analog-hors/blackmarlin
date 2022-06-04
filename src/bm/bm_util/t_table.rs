@@ -1,6 +1,6 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use cozy_chess::{Board, Move, Square};
+use cozy_chess::{Board, Move, Square, Rank, Piece};
 
 use crate::bm::bm_util::eval::Evaluation;
 
@@ -102,6 +102,20 @@ pub struct TranspositionTable {
     mask: usize,
 }
 
+fn hash(board: &Board) -> u64 {
+    let mut include_ep = true;
+    if let Some(ep_file) = board.en_passant() {
+        let color = board.side_to_move();
+        let attacker_rank = Rank::Fifth.relative_to(color);
+        let attacker_squares = attacker_rank.bitboard() & ep_file.adjacent();
+        let our_pawns = board.colors(color) & board.pieces(Piece::Pawn);
+        if (our_pawns & attacker_squares).is_empty() {
+            include_ep = false;
+        }
+    }
+    board.hash(include_ep)
+}
+
 impl TranspositionTable {
     pub fn new(size: usize) -> Self {
         let size = size.next_power_of_two();
@@ -118,7 +132,7 @@ impl TranspositionTable {
     }
 
     pub fn get(&self, board: &Board) -> Option<Analysis> {
-        let hash = board.hash();
+        let hash = hash(board);
         let index = self.index(hash);
 
         let entry = &self.table[index];
@@ -137,7 +151,7 @@ impl TranspositionTable {
     }
 
     pub fn set(&self, board: &Board, entry: Analysis) {
-        let hash = board.hash();
+        let hash = hash(board);
         let index = self.index(hash);
         let fetched_entry = &self.table[index];
         let analysis: Analysis =

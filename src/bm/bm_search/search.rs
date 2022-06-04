@@ -735,7 +735,7 @@ pub fn see<const N: usize>(board: &Board, make_move: Move) -> i16 {
         let defenders = board.colors(color) & blockers;
         for &piece in &Piece::ALL {
             last_piece_pts = piece_pts(piece);
-            let mut potential = match piece {
+            let potential = match piece {
                 Piece::Pawn => cozy_chess::get_pawn_attacks(target_square, !color),
                 Piece::Knight => cozy_chess::get_knight_moves(target_square),
                 Piece::Bishop => cozy_chess::get_bishop_moves(target_square, blockers),
@@ -747,8 +747,7 @@ pub fn see<const N: usize>(board: &Board, make_move: Move) -> i16 {
                 Piece::King => cozy_chess::get_king_moves(target_square),
             } & board.pieces(piece)
                 & defenders;
-            if potential != BitBoard::EMPTY {
-                let attacker = potential.next().unwrap();
+            if let Some(attacker) = potential.next_square() {
                 blockers &= !attacker.bitboard();
                 color = !color;
                 continue 'outer;

@@ -43,18 +43,16 @@ checksum = "baf1de4339761588bc0619e3cbc0120ee582ebb74b53b4efbf79117bd2da40fd"
 
 [[package]]
 name = "cozy-chess"
-version = "0.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "72d6f3012f57c6f63e76e5fb55095fb24a63db228d8a9df1ce2d3eac19162bd7"
+version = "0.3.0"
+source = "git+https://github.com/analog-hors/cozy-chess?branch=ep-hash#0809063bfa917b17d5dbbfb0d804704e9cd55fc7"
 dependencies = [
  "cozy-chess-types",
 ]
 
 [[package]]
 name = "cozy-chess-types"
-version = "0.1.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "847c4608e7a1ec5968d182493cdab14836def5aa950d2191662bab1f831ab903"
+version = "0.2.0"
+source = "git+https://github.com/analog-hors/cozy-chess?branch=ep-hash#0809063bfa917b17d5dbbfb0d804704e9cd55fc7"
 
 [[package]]
 name = "getrandom"
