@@ -116,7 +116,7 @@ impl<const K: usize> OrderedMoveGen<K> {
                     }
                     let expected_gain =
                         c_hist.get(board.side_to_move(), make_move.from, make_move.to)
-                            + search::see::<1>(&board, make_move) * 32;
+                            + search::see::<1>(board, make_move) * 32;
                     self.captures.push((make_move, expected_gain, None));
                 }
             }
@@ -128,7 +128,7 @@ impl<const K: usize> OrderedMoveGen<K> {
             let mut best_index = None;
             for (index, (make_move, score, see)) in self.captures.iter_mut().enumerate() {
                 if *score > max {
-                    let see_score = see.unwrap_or_else(|| search::see::<16>(&board, *make_move));
+                    let see_score = see.unwrap_or_else(|| search::see::<16>(board, *make_move));
                     *see = Some(see_score);
                     if see_score < 0 {
                         *score += LOSING_CAPTURE;
@@ -271,7 +271,7 @@ impl QuiescenceSearchMoveGen {
                 for make_move in piece_moves {
                     let expected_gain =
                         c_hist.get(board.side_to_move(), make_move.from, make_move.to)
-                            + search::see::<1>(&board, make_move) * 32;
+                            + search::see::<1>(board, make_move) * 32;
                     self.queue.push((make_move, expected_gain, None));
                 }
                 false
@@ -282,7 +282,7 @@ impl QuiescenceSearchMoveGen {
         let mut best_index = None;
         for (index, (make_move, score, see)) in self.queue.iter_mut().enumerate() {
             if best_index.is_none() || *score > max {
-                let see_score = see.unwrap_or_else(|| search::see::<16>(&board, *make_move));
+                let see_score = see.unwrap_or_else(|| search::see::<16>(board, *make_move));
                 *see = Some(see_score);
                 if see_score < 0 {
                     continue;
