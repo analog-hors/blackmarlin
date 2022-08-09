@@ -1,6 +1,6 @@
 use cozy_chess::{Board, Color, GameStatus, Move, Piece};
 
-use crate::bm::nnue::Nnue;
+use crate::bm::nnue::NnueState;
 
 use super::{eval::Evaluation, frc};
 
@@ -8,12 +8,12 @@ use super::{eval::Evaluation, frc};
 pub struct Position {
     current: Board,
     boards: Vec<Board>,
-    evaluator: Nnue,
+    evaluator: NnueState,
 }
 
 impl Position {
     pub fn new(board: Board) -> Self {
-        let mut evaluator = Nnue::new();
+        let mut evaluator = NnueState::new();
         evaluator.full_reset(&board);
         Self {
             current: board,

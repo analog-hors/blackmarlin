@@ -1,54 +1,38 @@
-use std::sync::Arc;
+use bytemuck::Zeroable;
 
-const UNITS: i16 = 400_i16;
+const UNITS: i16 = 400;
 const FT_SCALE: i16 = 255;
 const SCALE: i16 = 64;
 const MIN: i16 = 0;
 const MAX: i16 = FT_SCALE;
 const SHIFT: i16 = 8;
 
-#[derive(Debug, Clone)]
-pub struct Incremental<const INPUT: usize, const OUTPUT: usize> {
-    weights: Arc<[[i16; OUTPUT]; INPUT]>,
-    out: [i16; OUTPUT],
+#[derive(Debug, Clone, Zeroable)]
+pub struct BitLinear<const INPUT: usize, const OUTPUT: usize> {
+    pub weights: [[i16; OUTPUT]; INPUT],
+    pub biases: [i16; OUTPUT],
 }
 
-impl<const INPUT: usize, const OUTPUT: usize> Incremental<INPUT, OUTPUT> {
-    pub fn new(weights: Arc<[[i16; OUTPUT]; INPUT]>, bias: [i16; OUTPUT]) -> Self {
-        Self { weights, out: bias }
-    }
-
-    pub fn reset(&mut self, out: [i16; OUTPUT]) {
-        self.out = out;
-    }
-
+impl<const INPUT: usize, const OUTPUT: usize> BitLinear<INPUT, OUTPUT> {
     #[inline]
-    pub fn incr_ff<const CHANGE: i16>(&mut self, index: usize) {
-        for (out, &weight) in self.out.iter_mut().zip(&self.weights[index]) {
+    pub fn modify_feature<const CHANGE: i16>(&self, index: usize, outputs: &mut [i16; OUTPUT]) {
+        for (out, &weight) in outputs.iter_mut().zip(&self.weights[index]) {
             *out += weight * CHANGE;
         }
     }
-
-    pub fn get(&self) -> &[i16; OUTPUT] {
-        &self.out
-    }
 }
 
-#[derive(Debug, Clone)]
-pub struct Dense<const INPUT: usize, const OUTPUT: usize> {
-    weights: Arc<[[i8; INPUT]; OUTPUT]>,
-    bias: [i32; OUTPUT],
+#[derive(Debug, Clone, Zeroable)]
+pub struct Linear<const INPUT: usize, const OUTPUT: usize> {
+    pub weights: [[i8; INPUT]; OUTPUT],
+    pub biases: [i32; OUTPUT],
 }
 
-impl<const INPUT: usize, const OUTPUT: usize> Dense<INPUT, OUTPUT> {
-    pub fn new(weights: Arc<[[i8; INPUT]; OUTPUT]>, bias: [i32; OUTPUT]) -> Self {
-        Self { weights, bias }
-    }
-
+impl<const INPUT: usize, const OUTPUT: usize> Linear<INPUT, OUTPUT> {
     #[inline]
-    pub fn ff(&self, inputs: &[u8; INPUT]) -> [i32; OUTPUT] {
-        let mut out = self.bias;
-        for (out, weights) in out.iter_mut().zip(&*self.weights) {
+    pub fn forward(&self, inputs: &[u8; INPUT]) -> [i32; OUTPUT] {
+        let mut out = self.biases;
+        for (out, weights) in out.iter_mut().zip(&self.weights) {
             for (&input, &weight) in inputs.iter().zip(weights.iter()) {
                 *out += weight as i32 * input as i32;
             }
@@ -63,9 +47,9 @@ pub fn out(x: i32) -> i16 {
 }
 
 #[inline]
-pub fn sq_clipped_relu<const N: usize>(array: [i16; N], out: &mut [u8]) {
-    for (&x, clipped) in array.iter().zip(out.iter_mut()) {
-        let tmp = x.max(MIN).min(MAX) as u16;
-        *clipped = ((tmp * tmp) >> SHIFT) as u8;
+pub fn sq_clipped_relu<const N: usize>(input: &[i16; N], output: &mut [u8; N]) {
+    for (&input, output) in input.iter().zip(output.iter_mut()) {
+        let clamped = input.max(MIN).min(MAX) as u16;
+        *output = ((clamped * clamped) >> SHIFT) as u8;
     }
 }

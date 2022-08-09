@@ -1,22 +1,22 @@
+use std::io::Cursor;
 use std::sync::Arc;
 
 use cozy_chess::{Board, Color, File, Move, Piece, Rank, Square};
 
-use self::layers::{Dense, Incremental};
+use self::layers::BitLinear;
 
 use super::bm_runner::ab_runner;
 
-mod include;
 mod layers;
+mod model;
 
-include!(concat!(env!("OUT_DIR"), "/arch.rs"));
+use model::{Nnue, INPUT, MID};
 
 const NN_BYTES: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/eval.bin"));
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct Accumulator {
-    w_input_layer: Incremental<INPUT, MID>,
-    b_input_layer: Incremental<INPUT, MID>,
+    accumulator: [[i16; MID]; Color::NUM]
 }
 
 fn halfka_feature(
@@ -39,8 +39,20 @@ fn halfka_feature(
 }
 
 impl Accumulator {
+    pub fn new(ft: &BitLinear<INPUT, MID>) -> Self {
+        let mut accumulator = Self { accumulator: [[0; MID]; Color::NUM] };
+        accumulator.zero(ft);
+        accumulator
+    }
+
+    pub fn zero(&mut self, ft: &BitLinear<INPUT, MID>) {
+        self.accumulator[Color::White as usize].clone_from_slice(&ft.biases);
+        self.accumulator[Color::Black as usize].clone_from_slice(&ft.biases);
+    }
+
     pub fn update<const INCR: bool>(
         &mut self,
+        ft: &BitLinear<INPUT, MID>,
         w_king: Square,
         b_king: Square,
         sq: Square,
@@ -51,51 +63,34 @@ impl Accumulator {
         let b_index = halfka_feature(Color::Black, b_king, color, piece, sq);
 
         if INCR {
-            self.w_input_layer.incr_ff::<1>(w_index);
-            self.b_input_layer.incr_ff::<1>(b_index);
+            ft.modify_feature::<1>(w_index, &mut self.accumulator[Color::White as usize]);
+            ft.modify_feature::<1>(b_index, &mut self.accumulator[Color::Black as usize]);
         } else {
-            self.w_input_layer.incr_ff::<-1>(w_index);
-            self.b_input_layer.incr_ff::<-1>(b_index);
+            ft.modify_feature::<-1>(w_index, &mut self.accumulator[Color::White as usize]);
+            ft.modify_feature::<-1>(b_index, &mut self.accumulator[Color::Black as usize]);
         }
     }
 }
 
 #[derive(Debug, Clone)]
-pub struct Nnue {
+pub struct NnueState {
+    nnue: Arc<Nnue>,
     accumulator: Vec<Accumulator>,
-    bias: Arc<[i16; MID]>,
-    head: usize,
-    out_layer: Dense<{ MID * 2 }, OUTPUT>,
+    head: usize
 }
 
-impl Nnue {
+impl NnueState {
     pub fn new() -> Self {
-        let mut bytes = &NN_BYTES[12..];
-        let incremental = Arc::new(*include::sparse_from_bytes_i16::<i16, INPUT, MID>(bytes));
-        bytes = &bytes[INPUT * MID * 2..];
-        let incremental_bias = include::bias_from_bytes_i16::<i16, MID>(bytes);
-        bytes = &bytes[MID * 2..];
-        let out = Arc::new(*include::dense_from_bytes_i8::<i8, { MID * 2 }, OUTPUT>(
-            bytes,
-        ));
-        bytes = &bytes[MID * OUTPUT * 2..];
-        let out_bias = include::bias_from_bytes_i16::<i32, OUTPUT>(bytes);
-        bytes = &bytes[OUTPUT * 2..];
-        assert!(bytes.is_empty(), "{}", bytes.len());
-
-        let input_layer = Incremental::new(incremental, incremental_bias);
-        let out_layer = Dense::new(out, out_bias);
+        let nnue = Nnue::read_from(&mut Cursor::new(NN_BYTES)).unwrap();
+        let nnue = Arc::new(nnue);
+        let accumulator = vec![
+            Accumulator::new(&nnue.ft);
+            ab_runner::MAX_PLY as usize + 1
+        ];
 
         Self {
-            accumulator: vec![
-                Accumulator {
-                    w_input_layer: input_layer.clone(),
-                    b_input_layer: input_layer,
-                };
-                ab_runner::MAX_PLY as usize + 1
-            ],
-            bias: Arc::new(incremental_bias),
-            out_layer,
+            nnue,
+            accumulator,
             head: 0,
         }
     }
@@ -105,13 +100,12 @@ impl Nnue {
         let b_king = board.king(Color::Black);
         let acc = &mut self.accumulator[self.head];
 
-        acc.w_input_layer.reset(*self.bias);
-        acc.b_input_layer.reset(*self.bias);
+        acc.zero(&self.nnue.ft);
 
         for sq in board.occupied() {
             let piece = board.piece_on(sq).unwrap();
             let color = board.color_on(sq).unwrap();
-            acc.update::<true>(w_king, b_king, sq, piece, color);
+            acc.update::<true>(&self.nnue.ft, w_king, b_king, sq, piece, color);
         }
     }
 
@@ -121,10 +115,7 @@ impl Nnue {
     }
 
     fn push_accumulator(&mut self) {
-        let w_out = *self.accumulator[self.head].w_input_layer.get();
-        let b_out = *self.accumulator[self.head].b_input_layer.get();
-        self.accumulator[self.head + 1].w_input_layer.reset(w_out);
-        self.accumulator[self.head + 1].b_input_layer.reset(b_out);
+        self.accumulator.copy_within(self.head..self.head + 1, self.head + 1);
         self.head += 1;
     }
 
@@ -147,11 +138,11 @@ impl Nnue {
         }
         let acc = &mut self.accumulator[self.head];
 
-        acc.update::<false>(w_king, b_king, from_sq, from_type, stm);
+        acc.update::<false>(&self.nnue.ft, w_king, b_king, from_sq, from_type, stm);
 
         let to_sq = make_move.to;
         if let Some((captured, color)) = board.piece_on(to_sq).zip(board.color_on(to_sq)) {
-            acc.update::<false>(w_king, b_king, to_sq, captured, color);
+            acc.update::<false>(&self.nnue.ft, w_king, b_king, to_sq, captured, color);
         }
 
         if let Some(ep) = board.en_passant() {
@@ -161,6 +152,7 @@ impl Nnue {
             };
             if from_type == Piece::Pawn && to_sq == Square::new(ep, stm_sixth) {
                 acc.update::<false>(
+                    &self.nnue.ft,
                     w_king,
                     b_king,
                     Square::new(ep, stm_fifth),
@@ -176,6 +168,7 @@ impl Nnue {
             };
             if to_sq.file() > from_sq.file() {
                 acc.update::<true>(
+                    &self.nnue.ft,
                     w_king,
                     b_king,
                     Square::new(File::G, stm_first),
@@ -183,6 +176,7 @@ impl Nnue {
                     stm,
                 );
                 acc.update::<true>(
+                    &self.nnue.ft,
                     w_king,
                     b_king,
                     Square::new(File::F, stm_first),
@@ -191,6 +185,7 @@ impl Nnue {
                 );
             } else {
                 acc.update::<true>(
+                    &self.nnue.ft,
                     w_king,
                     b_king,
                     Square::new(File::C, stm_first),
@@ -198,6 +193,7 @@ impl Nnue {
                     stm,
                 );
                 acc.update::<true>(
+                    &self.nnue.ft,
                     w_king,
                     b_king,
                     Square::new(File::D, stm_first),
@@ -207,6 +203,7 @@ impl Nnue {
             }
         } else {
             acc.update::<true>(
+                &self.nnue.ft,
                 w_king,
                 b_king,
                 to_sq,
@@ -223,14 +220,9 @@ impl Nnue {
     #[inline]
     pub fn feed_forward(&mut self, stm: Color) -> i16 {
         let acc = &mut self.accumulator[self.head];
-        let mut incr = [0; MID * 2];
-        let (stm, nstm) = match stm {
-            Color::White => (&acc.w_input_layer, &acc.b_input_layer),
-            Color::Black => (&acc.b_input_layer, &acc.w_input_layer),
-        };
-        layers::sq_clipped_relu(*stm.get(), &mut incr);
-        layers::sq_clipped_relu(*nstm.get(), &mut incr[MID..]);
-
-        layers::out(self.out_layer.ff(&incr)[0])
+        let mut incr = [[0; MID]; Color::NUM];
+        layers::sq_clipped_relu(&acc.accumulator[stm as usize], &mut incr[0]);
+        layers::sq_clipped_relu(&acc.accumulator[!stm as usize], &mut incr[1]);
+        layers::out(self.nnue.l1.forward(bytemuck::cast_ref(&incr))[0])
     }
 }

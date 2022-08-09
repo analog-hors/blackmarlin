@@ -17,7 +17,7 @@ fn parse_bm_net() {
     let mut def_nodes = String::new();
     const LAYER_SIZES: [&str; 3] = ["INPUT", "MID", "OUTPUT"];
     for (&size, name) in layers.iter().zip(LAYER_SIZES) {
-        writeln!(&mut def_nodes, "const {}: usize = {};", name, size).unwrap();
+        writeln!(&mut def_nodes, "pub const {}: usize = {};", name, size).unwrap();
     }
 
     std::fs::write(&eval_path, nn_bytes).unwrap();
